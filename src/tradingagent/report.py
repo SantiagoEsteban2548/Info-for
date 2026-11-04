@@ -168,7 +168,7 @@ def draw_asset_page(fig, item: ReportItem, equity: float, lookback: int = 90, ho
     levels += [lo2, hi2, float(df["low"].min()), float(df["high"].max())]
     pad = (max(levels) - min(levels)) * 0.05
     ax.set_ylim(min(levels) - pad, max(levels) + pad)
-    ax.set_xlim(-1, n + horizon + 17)
+    ax.set_xlim(-1, n + horizon + 34)
     step = max(1, n // 6)
     ticks = list(range(0, n, step))
     ax.set_xticks(ticks, [df.index[t].strftime("%d %b") for t in ticks], fontsize=8)
