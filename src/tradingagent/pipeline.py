@@ -55,8 +55,17 @@ class AssetReport:
 def load_daily_candles(asset: Asset, days: int = 400) -> pd.DataFrame:
     from .data import fetch_ohlcv, make_exchange
 
+    import ccxt
+
     since = int((time.time() - days * 86400) * 1000)
-    df = fetch_ohlcv(make_exchange(asset.exchange), asset.symbol, "1d", since_ms=since)
+    try:
+        df = fetch_ohlcv(make_exchange(asset.exchange), asset.symbol, "1d", since_ms=since)
+    except (ccxt.NetworkError, ccxt.ExchangeNotAvailable):
+        # Binance bloquea algunas regiones (HTTP 451, p. ej. servidores en EE. UU.). Los perpetuos
+        # cripto de BingX usan el mismo símbolo, así que las velas salen de ahí. Solo afecta a los datos.
+        if asset.exchange == "bingx":
+            raise
+        df = fetch_ohlcv(make_exchange("bingx"), asset.symbol, "1d", since_ms=since)
     today = pd.Timestamp.now(tz="UTC").normalize()
     return df[df.index < today]          # solo velas cerradas
 

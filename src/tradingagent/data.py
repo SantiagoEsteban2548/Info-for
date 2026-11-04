@@ -13,14 +13,16 @@ def make_exchange(exchange_id: str):
 
     if exchange_id not in SUPPORTED_EXCHANGES:
         raise ValueError(f"Exchange no soportado: {exchange_id}. Usa uno de {SUPPORTED_EXCHANGES}")
-    return getattr(ccxt, exchange_id)({"enableRateLimit": True})
+    # requests_trust_env: respeta HTTPS_PROXY y REQUESTS_CA_BUNDLE del sistema (proxies corporativos
+    # o de la nube); sin esto ccxt los ignora y falla la verificación TLS.
+    return getattr(ccxt, exchange_id)({"enableRateLimit": True, "requests_trust_env": True})
 
 
 def fetch_ohlcv(exchange, symbol: str, timeframe: str, since_ms: int | None = None,
                 until_ms: int | None = None, page_limit: int = 1000) -> pd.DataFrame:
     """Descarga velas paginando. Devuelve un DataFrame indexado por hora UTC.
 
-    Para perpetuos usa símbolos de ccxt como "BTC/USDT:USDT" o "XAU/USDT:USDT".
+    Para perpetuos usa símbolos de ccxt como "BTC/USDT:USDT" o, en BingX, "NCCOGOLD2USD/USDT:USDT" (oro).
     """
     rows: list[list[float]] = []
     cursor = since_ms
