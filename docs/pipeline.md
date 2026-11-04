@@ -25,6 +25,9 @@
    3x aislado, nocional mínimo 5 USD, no repetir activo, no abrir nada si existe el archivo
    `STOP` o si la pérdida acumulada supera el 10% del capital.
 7. **Ejecución.** Entrada stop-market + stop loss + take profit.
+8. **Informe.** Cada corrida deja en `state/runs/AAAA-MM-DD_HHMM/` el `informe.md`, el
+   `informe.json`, los debates y `informe.pdf` (gráficos con entrada, stop, objetivo y rango).
+   Si el PDF falla, queda `informe_pdf_error.txt` y la corrida sigue valiendo.
 
 ## Por qué el modelo no puede operar solo
 

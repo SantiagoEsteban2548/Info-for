@@ -63,7 +63,8 @@ def load_daily_candles(asset: Asset, days: int = 400) -> pd.DataFrame:
 
 def run(assets: list[Asset], llm: LLM, brokers: dict, limits: Limits, out_dir: Path,
         load_candles: CandleLoader = load_daily_candles, fetch=http_get,
-        now: datetime | None = None) -> list[AssetReport]:
+        now: datetime | None = None, broker_name: str = "paper",
+        pdf: bool = True) -> list[AssetReport]:
     """`brokers` mapea exchange -> broker. Los topes de posiciones y pérdidas son globales."""
     now = now or datetime.now(timezone.utc)
     reports: list[AssetReport] = []
@@ -138,6 +139,17 @@ def run(assets: list[Asset], llm: LLM, brokers: dict, limits: Limits, out_dir: P
         rep.decision += f"; orden colocada con riesgo {d.risk_pct:g}% ({size['risk_usd']:.2f} USD)"
         slots -= 1
         open_symbols.add(asset.symbol)
+    if pdf:
+        # El PDF es un extra: si falla, la corrida (y las órdenes) siguen valiendo.
+        try:
+            from . import report
+
+            items = report.items_from_reports(reports, candles, {a.key: a.name for a in assets},
+                                              equity)
+            report.build_daily_pdf(items, out_dir / "informe.pdf", now, equity, broker_name)
+        except Exception as exc:
+            (out_dir / "informe_pdf_error.txt").write_text(f"{type(exc).__name__}: {exc}\n",
+                                                           encoding="utf-8")
     return reports
 
 
@@ -200,7 +212,7 @@ def main(argv: list[str] | None = None) -> None:
     else:
         brokers = {ex: make_broker(args.broker, state, ex, limits.max_leverage)
                    for ex in {a.exchange for a in assets}}
-    reports = run(assets, llm, brokers, limits, out)
+    reports = run(assets, llm, brokers, limits, out, broker_name=args.broker)
     md = format_markdown(reports, args.broker, now)
     (out / "informe.md").write_text(md, encoding="utf-8")
     (out / "informe.json").write_text(json.dumps([asdict(x) for x in reports], ensure_ascii=False,
