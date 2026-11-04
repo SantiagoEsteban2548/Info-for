@@ -84,3 +84,21 @@ def test_cli_builds_pdf(tmp_path, monkeypatch, capsys):
     out = tmp_path / "x.pdf"
     report.main(["--assets", "BTC,XAU", "--out", str(out)])
     assert str(out) in capsys.readouterr().out and pages(out) == 3
+
+
+def test_conditional_plan_when_no_setup():
+    from tradingagent.report import conditional_plan, effective_plan
+    df = walk()
+    order, bias = conditional_plan(df, "BTC/USDT:USDT")
+    assert order.setup == "COND" and bias
+    assert (order.entry - order.stop) * order.direction > 0
+    assert abs((order.target - order.entry) / (order.entry - order.stop) - 2.0) < 1e-9
+    plan, cond, _ = effective_plan(ReportItem("X", "BTC/USDT:USDT", df))
+    assert plan is not None and cond is True
+
+
+def test_pdf_always_has_plan_text(tmp_path):
+    out = build_daily_pdf([ReportItem("Oro XAUUSD", "XAU", walk())], tmp_path / "r.pdf", datetime(2026, 11, 4))
+    import pypdf
+    text = " ".join(p.extract_text() for p in pypdf.PdfReader(out).pages)
+    assert "PLAN CONDICIONAL" in text and "configura" in text

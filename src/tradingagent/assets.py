@@ -20,7 +20,7 @@ class Asset:
     key: str
     name: str
     exchange: str             # binance | bingx
-    symbol: str               # símbolo ccxt del perpetuo (BingX: oro = GOLD(XAU)-USDT, plata = SILVER(XAG)-USDT)
+    symbol: str               # símbolo ccxt del perpetuo (BingX: oro = GOLD(XAU)-USDT, plata = SILVER(XAG)-USDT; CFD que replica el spot XAUUSD/XAGUSD)
     kind: str                 # crypto | metal
     query: str                # término de búsqueda para Reddit/X
     keywords: tuple[str, ...]
@@ -43,8 +43,8 @@ ASSETS: dict[str, Asset] = {a.key: a for a in [
           ("bitcoin", "btc"), ("Bitcoin", "CryptoCurrency"), "BINANCE:BTCUSDT.P", 2.0),
     Asset("ETH", "Ethereum", "binance", "ETH/USDT:USDT", "crypto", "ethereum",
           ("ethereum", "eth", "ether"), ("ethereum", "CryptoCurrency"), "BINANCE:ETHUSDT.P", 2.0),
-    Asset("XAU", "Oro", "bingx", "NCCOGOLD2USD/USDT:USDT", "metal", "gold price",
+    Asset("XAU", "Oro XAUUSD", "bingx", "NCCOGOLD2USD/USDT:USDT", "metal", "gold price",
           ("gold", "xau", "bullion"), ("Gold", "Commodities"), "OANDA:XAUUSD", 3.0),
-    Asset("XAG", "Plata", "bingx", "NCCOXAG2USD/USDT:USDT", "metal", "silver price",
+    Asset("XAG", "Plata XAGUSD", "bingx", "NCCOXAG2USD/USDT:USDT", "metal", "silver price",
           ("silver", "xag"), ("Silverbugs", "Commodities"), "OANDA:XAGUSD", 3.0),
 ]}
