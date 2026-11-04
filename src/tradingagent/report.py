@@ -7,6 +7,7 @@ informe mide la cobertura histórica real de cada activo.
 """
 from __future__ import annotations
 
+import math
 import textwrap
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -71,6 +72,46 @@ def range_coverage(df: pd.DataFrame, k: float = 1.0, min_obs: int = 60) -> float
     return float(((nxt >= lo[ok]) & (nxt <= hi[ok])).mean())
 
 
+def conditional_plan(df: pd.DataFrame, symbol: str, rr: float = 2.0, atr_buffer: float = 0.1,
+                     lookback: int = 3) -> tuple[Order, str]:
+    """Plan hipotético para días sin setup S1: mismo esquema de entrada, stop y objetivo.
+
+    El sesgo sale de la tendencia (cierre y EMA20 frente a EMA50). Entrada: ruptura del máximo
+    (largo) o mínimo (corto) de la última vela; stop: extremo de las últimas `lookback` velas
+    con un margen de ATR; objetivo a `rr`R. NO es una señal confirmada: es el nivel que habría
+    que ver para que la idea exista.
+    """
+    close = df["close"]
+    e20, e50 = float(ema(close, 20).iloc[-1]), float(ema(close, 50).iloc[-1])
+    last, a = float(close.iloc[-1]), float(atr(df).iloc[-1])
+    direction = 1 if last >= e50 else -1
+    strong = (last > e50 and e20 > e50) or (last < e50 and e20 < e50)
+    tail = df.iloc[-lookback:]
+    if direction == 1:
+        entry = float(df["high"].iloc[-1])
+        stop = float(tail["low"].min()) - atr_buffer * a
+    else:
+        entry = float(df["low"].iloc[-1])
+        stop = float(tail["high"].max()) + atr_buffer * a
+    risk = (entry - stop) * direction
+    if risk <= 0:
+        risk = a
+        stop = entry - direction * risk
+    target = entry + direction * rr * risk
+    bias = "tendencia clara" if strong else "tendencia mixta, sesgo débil"
+    return Order(symbol, "COND", direction, entry, stop, float(target), df.index[-1]), bias
+
+
+def effective_plan(item: "ReportItem") -> tuple[Order | None, bool, str]:
+    """(orden, es_condicional, nota de sesgo). Siempre hay plan si hay velas suficientes."""
+    if item.order:
+        return item.order, False, ""
+    if len(item.df) < 51:
+        return None, False, ""
+    order, bias = conditional_plan(item.df, item.symbol)
+    return order, True, bias
+
+
 def fmt(x: float) -> str:
     return f"{x:,.2f}" if abs(x) >= 100 else f"{x:.4g}"
 
@@ -109,23 +150,25 @@ def draw_asset_page(fig, item: ReportItem, equity: float, lookback: int = 90, ho
 
     levels = [last]
     x_right = n + horizon + 0.3
-    if item.order:
-        o = item.order
+    o, cond, bias = effective_plan(item)
+    if o:
         levels += [o.entry, o.stop, o.target]
         ax.axhspan(min(o.entry, o.target), max(o.entry, o.target), color=UP, alpha=0.07, zorder=0)
         ax.axhspan(min(o.entry, o.stop), max(o.entry, o.stop), color=DOWN, alpha=0.07, zorder=0)
-        for value, name, color, style in ((o.entry, "Entrada", BLUE, "-"),
+        tag = " (cond.)" if cond else ""
+        for value, name, color, style in ((o.entry, "Entrada", BLUE, "-" if not cond else ":"),
                                           (o.stop, "Stop", DOWN, "--"),
                                           (o.target, "Objetivo", UP, "--")):
-            ax.hlines(value, -1, x_right - 0.2, color=color, linewidth=1.2, linestyle=style, zorder=5)
-            ax.text(x_right, value, f"{name} {fmt(value)}", color=color, fontsize=8, va="center",
+            ax.hlines(value, -1, x_right - 0.2, color=color, linewidth=1.2, linestyle=style,
+                      alpha=0.7 if cond else 1.0, zorder=5)
+            ax.text(x_right, value, f"{name}{tag} {fmt(value)}", color=color, fontsize=8, va="center",
                     fontweight="bold", zorder=6,
                     bbox={"facecolor": "white", "edgecolor": "none", "pad": 1.5})
     lo2, hi2 = last * np.exp(-2 * sigma * np.sqrt(horizon)), last * np.exp(2 * sigma * np.sqrt(horizon))
     levels += [lo2, hi2, float(df["low"].min()), float(df["high"].max())]
     pad = (max(levels) - min(levels)) * 0.05
     ax.set_ylim(min(levels) - pad, max(levels) + pad)
-    ax.set_xlim(-1, n + horizon + 9)
+    ax.set_xlim(-1, n + horizon + 17)
     step = max(1, n // 6)
     ticks = list(range(0, n, step))
     ax.set_xticks(ticks, [df.index[t].strftime("%d %b") for t in ticks], fontsize=8)
@@ -146,18 +189,25 @@ def draw_asset_page(fig, item: ReportItem, equity: float, lookback: int = 90, ho
     if cov is not None:
         lines.append(f"Cobertura histórica de la banda 1σ en este activo: {cov:.0%} de los días "
                      f"(teórico ~68%; menos indica colas gordas).")
-    if item.order:
-        o = item.order
+    if o:
         risk = abs(o.entry - o.stop)
         rr = abs(o.target - o.entry) / risk
         size = position_size(equity, item.risk_pct, o.entry, o.stop, item.max_leverage)
-        lines.append(f"Idea {_side(o)}: entrada {fmt(o.entry)}, stop {fmt(o.stop)}, objetivo {fmt(o.target)} "
-                     f"(relación beneficio/riesgo {rr:.1f}). Válida {o.valid_bars} velas diarias.")
+        setting = max(1, math.ceil(size["leverage"] - 1e-9))
+        if cond:
+            lines.append(f"PLAN CONDICIONAL, NO ACTIVADO ({bias}). No hay setup confirmado hoy; esto es el plan "
+                         f"si el precio rompe el nivel de entrada.")
+        lines.append(f"{'Plan' if cond else 'Idea'} {_side(o)}: entrada {fmt(o.entry)} (orden stop, se activa al "
+                     f"romper), stop {fmt(o.stop)} ({risk / o.entry:.2%} del precio), objetivo {fmt(o.target)} "
+                     f"(beneficio/riesgo {rr:.1f}). Válido {o.valid_bars} velas diarias.")
         lines.append(f"Tamaño con {equity:g} USD y {item.risk_pct:g}% de riesgo: {size['qty']:.4g} unidades, "
-                     f"nocional {size['notional']:.2f} USD, apalancamiento {size['leverage']:.2f}x, "
-                     f"riesgo real {size['risk_usd']:.2f} USD.")
+                     f"nocional {size['notional']:.2f} USD, apalancamiento efectivo {size['leverage']:.2f}x; "
+                     f"configura {setting}x aislado (tope {item.max_leverage:g}x), margen {size['notional'] / setting:.2f} USD, "
+                     f"riesgo real {size['risk_usd']:.2f} USD, ganancia al objetivo {size['risk_usd'] * rr:.2f} USD.")
+        if size["capped_by_leverage"]:
+            lines.append("Aviso: el tope de apalancamiento recortó el tamaño; el riesgo real es menor al pedido.")
     else:
-        lines.append("Sin idea válida hoy: no operar también es una decisión.")
+        lines.append("Sin velas suficientes para calcular un plan.")
     if item.technical:
         lines.append("Técnico: " + item.technical)
     v = item.verdict
@@ -183,19 +233,22 @@ def draw_summary(fig, items: list[ReportItem], now: datetime, equity: float, bro
     fig.text(0.09, 0.94, f"Informe diario {now:%Y-%m-%d}", fontsize=18, fontweight="bold", color=INK)
     sub = f"Swing sobre velas diarias · capital {equity:g} USD" + (f" · ejecución: {broker_name}" if broker_name else "")
     fig.text(0.09, 0.915, sub, fontsize=9.5, color=MUTED)
-    header = ["Activo", "Cierre", "Idea", "Entrada", "Stop", "Objetivo", "Rango 1σ mañana", "Rango 1σ 5 días"]
+    header = ["Activo", "Cierre", "Idea", "Entrada", "Stop", "Objetivo", "Apal.", "Rango 1σ 5 días"]
     rows = []
     for it in items:
-        lo1, hi1 = expected_range(it.df, 1)
         lo5, hi5 = expected_range(it.df, 5)
-        o = it.order
-        rows.append([it.name, fmt(float(it.df["close"].iloc[-1])), _side(o) if o else "sin idea",
+        o, cond, _ = effective_plan(it)
+        lev = "-"
+        if o:
+            lev = f"{position_size(equity, it.risk_pct, o.entry, o.stop, it.max_leverage)['leverage']:.2f}x"
+        idea = "sin plan" if not o else (f"cond. {_side(o)}" if cond else _side(o))
+        rows.append([it.name, fmt(float(it.df["close"].iloc[-1])), idea,
                      fmt(o.entry) if o else "-", fmt(o.stop) if o else "-", fmt(o.target) if o else "-",
-                     f"{fmt(lo1)} a {fmt(hi1)}", f"{fmt(lo5)} a {fmt(hi5)}"])
+                     lev, f"{fmt(lo5)} a {fmt(hi5)}"])
     ax = fig.add_axes([0.05, 0.55, 0.90, 0.33])
     ax.axis("off")
     table = ax.table(cellText=rows or [["-"] * len(header)], colLabels=header, loc="upper center",
-                     cellLoc="center", colWidths=[0.09, 0.10, 0.10, 0.10, 0.10, 0.10, 0.19, 0.19])
+                     cellLoc="center", colWidths=[0.15, 0.10, 0.12, 0.10, 0.10, 0.10, 0.08, 0.21])
     table.auto_set_font_size(False)
     table.set_fontsize(8)
     table.scale(1, 1.8)
@@ -206,7 +259,8 @@ def draw_summary(fig, items: list[ReportItem], now: datetime, equity: float, bro
             cell.set_text_props(fontweight="bold")
     n_ideas = sum(1 for it in items if it.order)
     notes = [
-        f"Ideas con setup técnico hoy: {n_ideas} de {len(items)} activos.",
+        f"Ideas con setup técnico confirmado hoy: {n_ideas} de {len(items)} activos.",
+        "\"cond.\" = plan condicional: no hay setup confirmado, es el plan si el precio rompe la entrada. No operar hasta que se active.",
         "Cada orden usa un stop por estructura del gráfico y objetivo de 2R; el tamaño sale de la distancia al stop.",
         "El rango 1σ es una banda estadística de la volatilidad reciente alrededor del último cierre, no una predicción.",
         "Las páginas siguientes muestran, por activo, las velas, EMA 20/50, entrada, stop, objetivo y la zona de rango proyectado.",
