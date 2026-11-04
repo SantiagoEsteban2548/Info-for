@@ -36,8 +36,7 @@ Por ahora el intradía (I1) está en pausa: la versión 1 es swing con velas dia
 
 ```bash
 pip install -e ".[dev,llm]"
-python -m tradingagent.pipeline run --broker paper --llm anthropic   # sábado
-python -m tradingagent.pipeline update                               # entre semana
+python -m tradingagent.pipeline run --broker paper --llm anthropic   # una vez al día, tras las 00:00 UTC
 ```
 
 Recoge noticias de Reddit, X (vía puente RSS), TradingView y medios; tres agentes (alcista, bajista,

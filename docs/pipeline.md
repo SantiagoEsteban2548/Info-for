@@ -1,9 +1,12 @@
 # Pipeline automático: noticias → debate → juez → ejecución
 
-## Flujo (cada sábado, velas diarias cerradas)
+## Flujo (todos los días, tras el cierre de la vela diaria de las 00:00 UTC)
 
+0. **Puesta al día (código).** Antes de analizar, las órdenes abiertas en paper se actualizan
+   con las velas nuevas: se activan, cierran en stop u objetivo, se invalidan o vencen (7 velas).
 1. **Técnico (código).** `weekly.pending_orders` busca un setup S1 en cada activo. Si no hay
-   setup, ese activo se salta y no se gasta nada en modelo.
+   setup, si el activo ya tiene posición u orden abierta, o si esa misma señal ya se colocó
+   otro día, el activo se salta y no se gasta nada en modelo.
 2. **Noticias (código).** `news.collect_news` junta los últimos 7 días de:
    - Reddit (JSON público, sin clave).
    - X, a través de un puente RSS que configures (`TRADINGAGENT_X_RSS`, p. ej. RSSHub propio).
@@ -41,21 +44,25 @@ manipulado en Reddit o X puede como mucho frenar una operación, no inventarla.
 ## Coste
 
 Todo es gratis salvo el modelo. Con `--llm anthropic` son 7 llamadas por activo con setup
-(6 de debate + juez). Con el modelo por defecto (`claude-opus-5-5`, esfuerzo bajo) es una
-estimación de unos 0,25 USD por activo con setup; con `TRADINGAGENT_MODEL=claude-haiku-5-5` baja
+(6 de debate + juez). Al correr a diario, una misma señal puede debatirse hasta 3 días seguidos
+si el juez la rechaza (con noticias nuevas cada día); una vez colocada ya no se debate. Con el modelo por defecto (`claude-opus-5-5`, esfuerzo bajo) es una
+estimación de unos 0,25 USD por activo con setup y día; con `TRADINGAGENT_MODEL=claude-haiku-5-5` baja
 a menos de 1 céntimo, con análisis menos fino. Necesita `ANTHROPIC_API_KEY`. `--llm keywords` es un sustituto
 gratuito por conteo de palabras, mucho más tosco, útil para probar el circuito.
 
 ## Programarlo en Windows
 
+Una tarea diaria a las 21:15 hora de Argentina (00:15 UTC, justo después del cierre de la vela
+diaria). Cada corrida ya actualiza las órdenes antes de buscar ideas, así que no hace falta otra.
+
 ```bat
-:: sábado 10:00, análisis y órdenes
-schtasks /create /tn "tradingagent-run" /sc weekly /d SAT /st 10:00 ^
+schtasks /create /tn "tradingagent-diario" /sc daily /st 21:15 ^
   /tr "cmd /c cd /d C:\ruta\Info-for && python -m tradingagent.pipeline run --broker paper"
-:: lunes a viernes 22:00, actualizar órdenes paper
-schtasks /create /tn "tradingagent-update" /sc weekly /d MON,TUE,WED,THU,FRI /st 22:00 ^
-  /tr "cmd /c cd /d C:\ruta\Info-for && python -m tradingagent.pipeline update"
 ```
+
+La PC tiene que estar encendida a esa hora. Si no lo está, Windows no la corre ese día; se
+puede marcar "Ejecutar la tarea lo antes posible después de perder un inicio programado" en
+el Programador de tareas.
 
 ## Pendiente
 
