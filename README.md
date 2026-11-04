@@ -32,6 +32,19 @@ python -m tradingagent.cli --weekly --exchange binance --symbols "BTC/USDT,ETH/U
 
 Por ahora el intradía (I1) está en pausa: la versión 1 es swing con velas diarias, con órdenes que se cargan el fin de semana.
 
+## Pipeline automático (noticias → debate → juez → ejecución)
+
+```bash
+pip install -e ".[dev,llm]"
+python -m tradingagent.pipeline run --broker paper --llm anthropic   # sábado
+python -m tradingagent.pipeline update                               # entre semana
+```
+
+Recoge noticias de Reddit, X (vía puente RSS), TradingView y medios; tres agentes (alcista, bajista,
+lateral) debaten; un juez lo cruza con el setup técnico, y una regla en código decide si se opera.
+Ejecución en paper por defecto, testnet/demo de Binance y BingX opcional, real bloqueado.
+Detalle en [docs/pipeline.md](docs/pipeline.md).
+
 ## Limitaciones conocidas
 
 - La descarga en vivo desde Binance y BingX **no se ha probado**: el entorno donde se escribió el código no tiene acceso a esas APIs. Los tests usan un exchange simulado y datos sintéticos.
