@@ -11,6 +11,13 @@ from .strategies import Signal
 MIN_TRADES_FOR_CONCLUSIONS = 30
 
 
+def covers_costs(entry: float, target: float, fee_bps: float, slippage_bps: float,
+                 min_ratio: float) -> bool:
+    """True si el beneficio hasta el objetivo cubre al menos min_ratio veces el coste de ida y vuelta."""
+    cost = (entry + target) * (fee_bps + slippage_bps) / 1e4
+    return abs(target - entry) >= min_ratio * cost
+
+
 @dataclass
 class Result:
     trades: pd.DataFrame
@@ -48,8 +55,8 @@ def run_backtest(df: pd.DataFrame, signals: list[Signal], fee_bps: float = 5.0,
         if s.entry_pos <= busy_until:
             continue
         risk = (s.entry - s.stop) * s.direction
-        reward = (s.target - s.entry) * s.direction
-        if risk <= 0 or reward < min_reward_cost_ratio * (s.entry + s.target) * cost_rate:
+        if risk <= 0 or not covers_costs(s.entry, s.target, fee_bps, slippage_bps,
+                                         min_reward_cost_ratio):
             continue
         j, exit_price, reason = _exit(df, s)
         gross = (exit_price - s.entry) * s.direction
