@@ -15,6 +15,7 @@ Base de código de la fase 2 (aún sin recomendaciones automáticas):
 | `indicators.py` | EMA y ATR |
 | `strategies.py` | S1 (pullback a EMA 20, swing) e I1 (ruptura del rango de apertura de 15 min, intradía) |
 | `backtest.py` | Backtest con comisiones, deslizamiento y resultados en R; avisa si hay menos de 30 operaciones |
+| `weekly.py` | Modo fin de semana: órdenes condicionales S1 sobre velas diarias, estado de cada orden y informe semanal en Markdown |
 | `risk.py` | Tamaño de posición a partir del stop, con tope de apalancamiento |
 
 ## Uso
@@ -24,7 +25,12 @@ pip install -e ".[dev]"
 pytest
 python -m tradingagent.cli --exchange binance --symbol BTC/USDT --strategy s1 --days 730
 python -m tradingagent.cli --exchange bingx --symbol "XAU/USDT:USDT" --strategy i1 --days 60
+
+# Informe semanal de órdenes (para correr los sábados)
+python -m tradingagent.cli --weekly --exchange binance --symbols "BTC/USDT,ETH/USDT" --equity 100 --risk-pct 1
 ```
+
+Por ahora el intradía (I1) está en pausa: la versión 1 es swing con velas diarias, con órdenes que se cargan el fin de semana.
 
 ## Limitaciones conocidas
 
