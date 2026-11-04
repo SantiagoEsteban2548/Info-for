@@ -16,6 +16,7 @@ Base de código de la fase 2 (aún sin recomendaciones automáticas):
 | `strategies.py` | S1 (pullback a EMA 20, swing) e I1 (ruptura del rango de apertura de 15 min, intradía) |
 | `backtest.py` | Backtest con comisiones, deslizamiento y resultados en R; avisa si hay menos de 30 operaciones |
 | `weekly.py` | Modo fin de semana: órdenes condicionales S1 sobre velas diarias, estado de cada orden y informe semanal en Markdown |
+| `report.py` | Informe diario en PDF: resumen, velas con EMA 20/50, entrada, stop, objetivo y rango proyectado de 1σ por activo (`python -m tradingagent.report`) |
 | `risk.py` | Tamaño de posición a partir del stop, con tope de apalancamiento |
 
 ## Uso
