@@ -1,10 +1,12 @@
-"""Pipeline semanal automático: velas → setup técnico → noticias → debate → juez → órdenes.
+"""Pipeline diario automático: velas → setup técnico → noticias → debate → juez → órdenes.
 
-    python -m tradingagent.pipeline run --broker paper --llm anthropic
-    python -m tradingagent.pipeline update          # entre semana: estado de las órdenes paper
+    python -m tradingagent.pipeline run --broker paper --llm anthropic   # una vez al día
+    python -m tradingagent.pipeline update                               # solo actualizar paper
 
-Se ejecuta el sábado con velas diarias cerradas. El debate solo se lanza para activos con
-setup técnico (así no se gasta en modelo cuando no hay nada que operar).
+Se ejecuta cada día tras el cierre de la vela diaria (00:00 UTC). Cada corrida primero
+actualiza las órdenes abiertas con las velas nuevas y después busca ideas. El debate solo se
+lanza para activos con setup técnico nuevo: sin setup, con posición abierta o con esa misma
+señal ya colocada, no se gasta en modelo.
 """
 from __future__ import annotations
 
@@ -66,6 +68,20 @@ def run(assets: list[Asset], llm: LLM, brokers: dict, limits: Limits, out_dir: P
     now = now or datetime.now(timezone.utc)
     reports: list[AssetReport] = []
     unique = list({id(b): b for b in brokers.values()}.values())
+    candles: dict[str, pd.DataFrame] = {}
+
+    def get_candles(asset: Asset) -> pd.DataFrame:
+        if asset.symbol not in candles:
+            candles[asset.symbol] = load_candles(asset)
+        return candles[asset.symbol]
+
+    # 1) Poner al día las órdenes abiertas (paper) antes de contar huecos y pérdidas.
+    by_symbol = {a.symbol: a for a in ASSETS.values()} | {a.symbol: a for a in assets}
+    for b in unique:
+        if hasattr(b, "update"):
+            syms = {p.symbol for p in b.open_positions() if p.symbol in by_symbol}
+            b.update({s_: get_candles(by_symbol[s_]) for s_ in syms})
+    placed = {(p.symbol, p.created) for b in unique if hasattr(b, "all") for p in b.all()}
     open_now = [p for b in unique for p in b.open_positions()]
     open_symbols = {p.symbol if isinstance(p, Placement) else p.get("symbol") for p in open_now}
     slots = limits.max_positions - len(open_now)
@@ -78,7 +94,7 @@ def run(assets: list[Asset], llm: LLM, brokers: dict, limits: Limits, out_dir: P
         blocked = f"pérdida acumulada {pnl:.2f} USD supera el {limits.max_drawdown_pct:g}%"
 
     for asset in assets:
-        df = load_candles(asset)
+        df = get_candles(asset)
         orders = pending_orders(df, asset.symbol)
         order = orders[0] if orders else None
         tech = technical_context(df, asset.symbol, order)
@@ -86,6 +102,12 @@ def run(assets: list[Asset], llm: LLM, brokers: dict, limits: Limits, out_dir: P
         reports.append(rep)
         if order is None:
             rep.decision = "sin setup técnico: no se debate"
+            continue
+        if asset.symbol in open_symbols:
+            rep.decision = "ya hay una posición u orden abierta en este activo: no se debate"
+            continue
+        if (asset.symbol, order.created.isoformat()) in placed:
+            rep.decision = "esta señal ya se colocó antes: no se repite"
             continue
         news, errors = collect_news(asset.sources(), fetch=fetch, now=now)
         rep.news_count, rep.news_errors = len(news), errors
@@ -100,9 +122,6 @@ def run(assets: list[Asset], llm: LLM, brokers: dict, limits: Limits, out_dir: P
             continue
         if blocked:
             rep.decision += f"; no se coloca: {blocked}"
-            continue
-        if asset.symbol in open_symbols:
-            rep.decision += "; ya hay una posición u orden en este activo"
             continue
         if slots <= 0:
             rep.decision += f"; tope de {limits.max_positions} posiciones alcanzado"
@@ -123,7 +142,7 @@ def run(assets: list[Asset], llm: LLM, brokers: dict, limits: Limits, out_dir: P
 
 
 def format_markdown(reports: list[AssetReport], broker_name: str, now: datetime) -> str:
-    lines = [f"# Pipeline semanal {now:%Y-%m-%d} (ejecución: {broker_name})", ""]
+    lines = [f"# Pipeline diario {now:%Y-%m-%d} (ejecución: {broker_name})", ""]
     for r in reports:
         lines += [f"## {r.asset} ({r.symbol})", "", r.technical, ""]
         if r.verdict:
@@ -146,15 +165,15 @@ def make_broker(kind: str, state_dir: Path, exchange: str, max_leverage: float):
 
 
 def main(argv: list[str] | None = None) -> None:
-    p = argparse.ArgumentParser(description="Pipeline semanal: noticias, debate, juez y ejecución")
+    p = argparse.ArgumentParser(description="Pipeline diario: noticias, debate, juez y ejecución")
     sub = p.add_subparsers(dest="cmd", required=True)
-    r = sub.add_parser("run", help="análisis del sábado y colocación de órdenes")
+    r = sub.add_parser("run", help="corrida diaria: actualiza órdenes, analiza y coloca")
     r.add_argument("--assets", default="BTC,ETH,XAU,XAG")
     r.add_argument("--broker", choices=["paper", "testnet", "live"], default="paper")
     r.add_argument("--llm", choices=["anthropic", "keywords"], default="anthropic")
     r.add_argument("--equity", type=float, default=100.0)
     r.add_argument("--state-dir", default="state")
-    u = sub.add_parser("update", help="entre semana: actualiza las órdenes paper con velas nuevas")
+    u = sub.add_parser("update", help="solo actualiza las órdenes paper con velas nuevas")
     u.add_argument("--state-dir", default="state")
     args = p.parse_args(argv)
     state = Path(args.state_dir)
@@ -169,7 +188,7 @@ def main(argv: list[str] | None = None) -> None:
         return
 
     now = datetime.now(timezone.utc)
-    out = state / "runs" / f"{now:%Y-%m-%d}"
+    out = state / "runs" / f"{now:%Y-%m-%d_%H%M}"
     out.mkdir(parents=True, exist_ok=True)
     assets = [ASSETS[k.strip().upper()] for k in args.assets.split(",")]
     llm = AnthropicLLM() if args.llm == "anthropic" else KeywordLLM()

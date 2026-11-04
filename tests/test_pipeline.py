@@ -149,3 +149,41 @@ def test_testnet_clients_point_to_demo():
     assert "demo" in json.dumps(b.urls["api"]) or "testnet" in json.dumps(b.urls["api"])
     x = broker_mod.make_ccxt_client("bingx", "testnet")
     assert "vst" in json.dumps(x.urls["api"])
+
+
+def test_daily_runs_update_first_and_never_repeat_or_rebate(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    paper = PaperBroker(tmp_path / "l.json")
+    day1 = df_setup()
+    run(assets("BTC"), Judge(), {"binance": paper}, Limits(), tmp_path,
+        load_candles=lambda a: day1, fetch=no_news)
+    assert len(paper.open_positions()) == 1
+    # Día 2: abierta → no se vuelve a debatir.
+    llm = Judge()
+    reps = run(assets("BTC"), llm, {"binance": paper}, Limits(), tmp_path,
+               load_candles=lambda a: day1, fetch=no_news)
+    assert llm.calls == 0 and "abierta" in reps[0].decision
+    # Día 3: velas nuevas activan la orden y llegan al objetivo. La corrida actualiza el
+    # libro antes de analizar, y la señal ya activada no vuelve a salir como setup.
+    day3 = frame(UP + [SETUP, (158, 162, 157, 161), (161, 230, 160, 225)], freq="1D")
+    llm = Judge()
+    reps = run(assets("BTC"), llm, {"binance": paper}, Limits(), tmp_path,
+               load_candles=lambda a: day3, fetch=no_news)
+    [p] = paper.all()
+    assert p.status == "cerrada en objetivo" and p.pnl_usd > 0
+    assert llm.calls == 0 and paper.open_positions() == []
+
+
+def test_same_signal_closed_is_not_replaced(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    paper = PaperBroker(tmp_path / "l.json")
+    df = df_setup()
+    run(assets("BTC"), Judge(), {"binance": paper}, Limits(), tmp_path,
+        load_candles=lambda a: df, fetch=no_news)
+    rows = paper._load()
+    rows[0].status = "invalidada"
+    paper._save(rows)
+    llm = Judge()
+    reps = run(assets("BTC"), llm, {"binance": paper}, Limits(), tmp_path,
+               load_candles=lambda a: df, fetch=no_news)
+    assert llm.calls == 0 and "ya se colocó" in reps[0].decision and len(paper.all()) == 1
