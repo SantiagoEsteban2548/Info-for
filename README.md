@@ -25,7 +25,7 @@ Base de código de la fase 2 (aún sin recomendaciones automáticas):
 pip install -e ".[dev]"
 pytest
 python -m tradingagent.cli --exchange binance --symbol BTC/USDT --strategy s1 --days 730
-python -m tradingagent.cli --exchange bingx --symbol "XAU/USDT:USDT" --strategy i1 --days 60
+python -m tradingagent.cli --exchange bingx --symbol "NCCOGOLD2USD/USDT:USDT" --strategy i1 --days 60
 
 # Informe semanal de órdenes (para correr los sábados)
 python -m tradingagent.cli --weekly --exchange binance --symbols "BTC/USDT,ETH/USDT" --equity 100 --risk-pct 1
@@ -48,6 +48,6 @@ Detalle en [docs/pipeline.md](docs/pipeline.md).
 ## Limitaciones conocidas
 
 - La descarga en vivo desde Binance y BingX **no se ha probado**: el entorno donde se escribió el código no tiene acceso a esas APIs. Los tests usan un exchange simulado y datos sintéticos.
-- Los símbolos de perpetuos de oro y plata en ccxt hay que confirmarlos contra el mercado real (por ejemplo `XAU/USDT:USDT`).
+- En BingX (ccxt) el oro es `NCCOGOLD2USD/USDT:USDT` y la plata `NCCOXAG2USD/USDT:USDT` (confirmado contra el mercado real el 2026-11-04). Si Binance no responde (bloqueo regional 451), las velas de BTC/ETH se bajan de BingX.
 - I1 usa 13:30 UTC como apertura (EE. UU. en invierno); en horario de verano son las 12:30 UTC.
 - Los resultados del backtest son hipótesis a validar, no una promesa de rentabilidad.
