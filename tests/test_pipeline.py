@@ -50,6 +50,8 @@ def test_end_to_end_paper(tmp_path, monkeypatch):
     assert btc.placement and btc.placement["risk_usd"] == pytest.approx(1.0)
     assert "sin setup" in eth.decision and llm.calls == 7      # ETH no gasta llamadas
     assert len(paper.open_positions()) == 1
+    assert (tmp_path / "informe.pdf").stat().st_size > 1000
+    assert not (tmp_path / "informe_pdf_error.txt").exists()
     assert json.loads((tmp_path / "debate_BTC.json").read_text())["verdict"]["veredicto"] == "alcista"
     assert "Decisión" in format_markdown(reps, "paper", __import__("datetime").datetime.now())
     # Segunda ejecución con la misma señal: no duplica.
