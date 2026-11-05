@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -191,7 +192,8 @@ def main(argv: list[str] | None = None) -> None:
     r = sub.add_parser("run", help="corrida diaria: actualiza órdenes, analiza y coloca")
     r.add_argument("--assets", default="BTC,ETH,XAU,XAG")
     r.add_argument("--broker", choices=["paper", "testnet", "live"], default="paper")
-    r.add_argument("--llm", choices=["anthropic", "keywords"], default="anthropic")
+    r.add_argument("--llm", choices=["auto", "anthropic", "keywords"], default="auto",
+                   help="auto: Claude si hay ANTHROPIC_API_KEY (o perfil), si no palabras clave")
     r.add_argument("--equity", type=float, default=100.0)
     r.add_argument("--state-dir", default="state")
     u = sub.add_parser("update", help="solo actualiza las órdenes paper con velas nuevas")
@@ -212,7 +214,12 @@ def main(argv: list[str] | None = None) -> None:
     out = state / "runs" / f"{now:%Y-%m-%d_%H%M}"
     out.mkdir(parents=True, exist_ok=True)
     assets = [ASSETS[k.strip().upper()] for k in args.assets.split(",")]
-    llm = AnthropicLLM() if args.llm == "anthropic" else KeywordLLM()
+    kind = args.llm
+    if kind == "auto":
+        kind = "anthropic" if os.environ.get("ANTHROPIC_API_KEY") else "keywords"
+        if kind == "keywords":
+            print("Aviso: sin ANTHROPIC_API_KEY, uso el juez por palabras clave (más tosco).")
+    llm = AnthropicLLM() if kind == "anthropic" else KeywordLLM()
     limits = Limits(equity=args.equity)
     # Paper: un único libro. Testnet/real: un cliente por exchange (Binance cripto, BingX metales).
     if args.broker == "paper":

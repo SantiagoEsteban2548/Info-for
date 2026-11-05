@@ -58,10 +58,15 @@ gratuito por conteo de palabras, mucho más tosco, útil para probar el circuito
 Una tarea diaria a las 21:15 hora de Argentina (00:15 UTC, justo después del cierre de la vela
 diaria). Cada corrida ya actualiza las órdenes antes de buscar ideas, así que no hace falta otra.
 
+Reemplazá `C:\RUTA\Info-for` por la carpeta real del proyecto (donde está `.venv`). Usa el
+Python del entorno virtual y guarda la salida en un log, para ver errores si algo falla:
+
 ```bat
 schtasks /create /tn "tradingagent-diario" /sc daily /st 21:15 ^
-  /tr "cmd /c cd /d C:\ruta\Info-for && python -m tradingagent.pipeline run --broker paper"
+  /tr "cmd /c cd /d C:\RUTA\Info-for && if not exist state mkdir state && .venv\Scripts\python.exe -m tradingagent.pipeline run --broker paper >> state\diario.log 2>&1"
 ```
+
+Sin `ANTHROPIC_API_KEY` el pipeline usa solo el juez por palabras clave (`--llm auto`).
 
 La PC tiene que estar encendida a esa hora. Si no lo está, Windows no la corre ese día; se
 puede marcar "Ejecutar la tarea lo antes posible después de perder un inicio programado" en
